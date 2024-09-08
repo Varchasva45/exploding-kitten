@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/cors"
 	"net/http"
 	"strconv"
 )
@@ -269,9 +270,23 @@ func connectRedis() (*redis.Client, error)  {
 }
 
 func main() {
-	http.HandleFunc("/health", heathCheck)
-	http.HandleFunc("/addOrUpdateUser", addOrUpdateUser)
-	http.HandleFunc("/getUserDetails", getUserDetails)
-	http.HandleFunc("/hasWon", hasWon)
-	startServer()
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", heathCheck)
+	mux.HandleFunc("/addOrUpdateUser", addOrUpdateUser)
+	mux.HandleFunc("/getUserDetails", getUserDetails)
+	mux.HandleFunc("/hasWon", hasWon)
+
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"http://example.com", "http://localhost:3000"}, // Change as needed
+		AllowCredentials: true,
+	})
+
+	handler := c.Handler(mux)
+
+	fmt.Println("Server listening on port 3000")
+	err := http.ListenAndServe(":3000", handler)
+	if err != nil {
+		fmt.Println("Error in starting server", err)
+	}
 }
