@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	"net/http"
-	"strconv" 
 )
 
 var ctx = context.Background()
@@ -22,7 +21,6 @@ type UserDetails struct {
 	CARD2 string `json:"card2"`
 	CARD3 string `json:"card3"`
 	CARD4 string `json:"card4"`
-	SCORE int `json:"score"`
 }
 
 type RequestBody struct {
@@ -77,7 +75,6 @@ func addOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 		"card2": data.CARD2,
 		"card3": data.CARD3,
 		"card4": data.CARD4,
-		"score": 0,
 	}).Err()
 
 	if err != nil {
@@ -126,19 +123,12 @@ func getUserDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	score, err := strconv.Atoi(result["score"])
-	if err != nil {
-		http.Error(w, "Failed to parse score", http.StatusInternalServerError)
-		return
-	}
-
 	UserDetails := UserDetails {
 		USERNAME: username,
 		CARD1: result["card1"],
 		CARD2: result["card2"],
 		CARD3: result["card3"],
 		CARD4: result["card4"],
-		SCORE: score,
 	}
 
 	jsonResponse, err := json.Marshal(UserDetails)
