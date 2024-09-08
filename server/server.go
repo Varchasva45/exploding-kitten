@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	"net/http"
+	"strconv"
 )
 
 var ctx = context.Background()
@@ -21,6 +22,7 @@ type UserDetails struct {
 	CARD2 string `json:"card2"`
 	CARD3 string `json:"card3"`
 	CARD4 string `json:"card4"`
+	SCORE int `json:"score"`
 }
 
 type RequestBody struct {
@@ -70,20 +72,56 @@ func addOrUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	defer client.Close()
 
+	exists, err := client.HExists(ctx, "user:"+data.USERNAME, "card1").Result()	
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	var score int
+
+	if exists {
+		result, err := client.HGetAll(ctx, "user:"+data.USERNAME).Result();
+		if err != nil {
+			http.Error(w, "Internal Server error", http.StatusInternalServerError)
+			return
+		}
+		
+		tempScore, err := strconv.Atoi(result["score"])
+		if err != nil {
+			http.Error(w, "Failed to parse score", http.StatusInternalServerError)
+			return
+		}
+		
+		score = tempScore
+	} else {
+		score = 0
+	}
+
 	err = client.HSet(ctx, "user:"+data.USERNAME, map[string]interface{}{
 		"card1": data.CARD1,
 		"card2": data.CARD2,
 		"card3": data.CARD3,
 		"card4": data.CARD4,
+		"score": score,
 	}).Err()
 
 	if err != nil {
 		http.Error(w, "Failed to store data in Redis", http.StatusInternalServerError)
 	}
 
-	response := Response{
-		MESSAGE: "new user created successfully",
-		STATUS: http.StatusOK,
+	var response Response
+
+	if exists {
+		response = Response{
+			MESSAGE: "user updated successfully",
+			STATUS: http.StatusOK,
+		}
+	} else {
+		response = Response{
+			MESSAGE: "new user created successfully",
+			STATUS: http.StatusOK,
+		}
 	}
 
 	jsonResponse, err := json.Marshal(response)
@@ -142,6 +180,69 @@ func getUserDetails(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonResponse)
 }
 
+func hasWon(w http.ResponseWriter, r *http.Request) {
+	if(r.Method != http.MethodGet) {
+		http.Error(w, "Only Get Methods are allowed", http.StatusMethodNotAllowed)
+		return 
+	}
+
+	queryParams := r.URL.Query()
+	username := queryParams.Get("username")
+
+	client, err := connectRedis()
+	if err != nil {
+		fmt.Println("redis connection error", err)
+		return
+	}
+
+	exists, err := client.HExists(ctx, "user:"+username, "card1").Result()	
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if exists {
+		scoreString, err := client.HGet(ctx, "user:"+username, "score").Result()
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return 
+		}
+		
+		score, err := strconv.Atoi(scoreString)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return 
+		}
+
+		err = client.HSet(ctx, "user:"+username, map[string]interface{}{
+			"score": score + 1,
+		}).Err()
+
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return 
+		}
+
+		response := Response{
+			MESSAGE: "score updated successfully",
+			STATUS: http.StatusOK,
+		}
+
+		jsonResponse, err := json.Marshal(response)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(jsonResponse)
+
+	} else {
+		http.Error(w, "no player with this username", http.StatusBadRequest)
+	}
+}
+
 func startServer() {
 	fmt.Println("Sever listening on port 3000")
 	err := http.ListenAndServe(":3000", nil)
@@ -171,5 +272,6 @@ func main() {
 	http.HandleFunc("/health", heathCheck)
 	http.HandleFunc("/addOrUpdateUser", addOrUpdateUser)
 	http.HandleFunc("/getUserDetails", getUserDetails)
+	http.HandleFunc("/hasWon", hasWon)
 	startServer()
 }
